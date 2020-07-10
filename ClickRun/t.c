@@ -12,28 +12,51 @@
 // 热键ID
 #define HotKey				1011
 
-// 标志配置是否锁定
-BOOL CfgLocked = FALSE;
+static HWND hFont;			// 统一字体
+
+static HWND hTip1;			// 鼠标左右键选择文本
+static HWND hRadio_Left;	// 鼠标左键按钮
+static HWND hRadio_Right;	// 鼠标右键按钮
+
+static HWND hTip2;			// 模拟方式选择文本
+static HWND hCombo_Func;	// 方式选择框
+
+static HWND hTip3;			// 时间间隔文本
+static HWND hText_TL;		// 时间间隔输入框
+
+static HWND hTip4;			// 热键设置提示文本
+static HWND hCombo_HK;		// 热键设置选择框
+
+static HWND hBtn_UorE;		// 锁定解锁按钮
+
+static HWND hSepLine;		// 分割线
+static HWND hURL;			// 超文本链接文本框
+
 // 触发按键 1：左键 0：右键
-INT LeftorRight = 0;
+INT LeftorRight = 1;
 // 模拟点击方式 0：mouse_event 1：SendInput 2：WinIO
 INT Func = 0;
+// 点击时间间隔(ms)
+INT dig_TL = 500;
+// 选定的热键编号
+INT HK_Index = 0;
+// 标志配置是否锁定
+BOOL CfgLocked = FALSE;
 // 字符串形式的点击时间间隔
 TCHAR str_TL[20] = { 0 };
-// 整型形式的点击时间间隔
-INT dig_TL = 0;
+// 标记连点是否正在进行
+BOOL ClickRunning = FALSE;
+// 连点线程句柄
+HANDLE hClickThread = NULL;
+
 // 备选热键列表
 const TCHAR str_HKList[12][4] = { 
 	TEXT("F1"), TEXT("F2"), TEXT("F3"), TEXT("F4"), 
 	TEXT("F5"), TEXT("F6"), TEXT("F7"), TEXT("F8"), 
 	TEXT("F9"), TEXT("F10"), TEXT("F11"), TEXT("F12")
 };
-// 选定的热键编号
-INT HK_Index = 0;
-// 标记连点是否正在进行
-BOOL ClickRunning = FALSE;
-// 连点线程句柄
-HANDLE hClickThread = NULL;
+
+
 
 // 解锁当前配置（无GUI部分）
 INT UnLock_NoGUI(HWND thishwnd)
@@ -48,6 +71,63 @@ INT UnLock_NoGUI(HWND thishwnd)
 
 	return 0;
 }
+
+// 获取上一次保存配置的信息或默认配置
+// 并刷新界面配置显示
+INT FlashConfig()
+{
+	HKEY hKey = NULL;
+	DWORD dwType = REG_DWORD;
+	DWORD dwSize = sizeof(INT);
+
+	if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, TEXT("SOFTWARE\\ClickRun"), NULL, KEY_READ | KEY_WOW64_64KEY, &hKey) == ERROR_SUCCESS)
+	{
+		
+		RegQueryValueEx(hKey, TEXT("LeftorRight"), NULL, &dwType, (LPBYTE)(&LeftorRight), &dwSize);
+		RegQueryValueEx(hKey, TEXT("Func"), NULL, &dwType, (LPBYTE)(&Func), &dwSize);
+		RegQueryValueEx(hKey, TEXT("TL"), NULL, &dwType, (LPBYTE)(&dig_TL), &dwSize);
+		RegQueryValueEx(hKey, TEXT("HK"), NULL, &dwType, (LPBYTE)(&HK_Index), &dwSize);
+	}
+	RegCloseKey(hKey);
+	if (LeftorRight)
+	{
+		SendMessage(hRadio_Left, BM_SETCHECK, 1, 0);
+	}
+	else
+	{
+		SendMessage(hRadio_Right, BM_SETCHECK, 1, 0);
+	}
+	SendMessage(hCombo_Func, CB_SETCURSEL, Func, 0);
+	SendMessage(hText_TL, WM_SETTEXT, NULL, _itow(dig_TL, str_TL, 10));
+	SendMessage(hCombo_HK, CB_SETCURSEL, HK_Index, 0);
+
+	return 0;
+}
+
+// 保存当前配置到注册表
+INT SaveConfig()
+{
+	HKEY hKey = NULL;
+	DWORD dwType = REG_DWORD;
+	DWORD dwSize = sizeof(INT);
+	DWORD dwDispositon = 0;
+
+	if (RegCreateKeyEx(HKEY_LOCAL_MACHINE, TEXT("SOFTWARE\\ClickRun"), NULL, NULL, REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS | KEY_WOW64_64KEY, NULL, &hKey, &dwDispositon) == ERROR_SUCCESS)
+	{
+		RegSetValueEx(hKey, TEXT("LeftorRight"), NULL, dwType, (LPCBYTE)(&LeftorRight), dwSize);
+		RegSetValueEx(hKey, TEXT("Func"), NULL, dwType, (LPCBYTE)(&Func), dwSize);
+		RegSetValueEx(hKey, TEXT("TL"), NULL, dwType, (LPCBYTE)(&dig_TL), dwSize);
+		RegSetValueEx(hKey, TEXT("HK"), NULL, dwType, (LPCBYTE)(&HK_Index), dwSize);
+		RegCloseKey(hKey);
+		return 0;
+	}
+	else
+	{
+		return 1;
+	}
+	
+}
+
 // 连点执行者，循环放在最里层，减少不必要的重复判断
 DWORD WINAPI ClickRunner(LPVOID lpParam)
 {
@@ -126,26 +206,6 @@ LRESULT WINAPI CtlProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	int i;
 
-	static HWND hFont;			//统一字体
-
-	static HWND hTip1;			//鼠标左右键选择文本
-	static HWND hRadio_Left;	//鼠标左键按钮
-	static HWND hRadio_Right;	//鼠标右键按钮
-
-	static HWND hTip2;			//模拟方式选择文本
-	static HWND hCombo_Func;	//方式选择框
-
-	static HWND hTip3;			//时间间隔文本
-	static HWND hText_TL;		//时间间隔输入框
-
-	static HWND hTip4;			//热键设置提示文本
-	static HWND hCombo_HK;		//热键设置选择框
-
-	static HWND hBtn_UorE;		//锁定解锁按钮
-
-	static HWND hSepLine;		//分割线
-	static HWND hURL;			//超文本链接文本框
-
 	switch (message)
 	{
 	case WM_CREATE:
@@ -181,7 +241,7 @@ LRESULT WINAPI CtlProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		{
 			SendMessage(hCombo_HK, CB_ADDSTRING, 0, str_HKList[i]);
 		}
-		
+		FlashConfig();
 		break;
 	case WM_COMMAND:
 		switch (LOWORD(wParam))
@@ -251,8 +311,9 @@ LRESULT WINAPI CtlProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				EnableWindow(hCombo_Func, FALSE);
 				EnableWindow(hText_TL, FALSE);
 				EnableWindow(hCombo_HK, FALSE);
-				SendMessage(hBtn_UorE, WM_SETTEXT, 0, TEXT("解锁当前配置"));
-				CfgLocked = 1;// 标记锁定
+				SendMessage(hBtn_UorE, WM_SETTEXT, 0, TEXT("(配置已生效)解锁当前配置"));
+				CfgLocked = TRUE;// 标记锁定
+				SaveConfig();
 			}
 			break;
 		default:
@@ -289,6 +350,8 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPTSTR lpCmdLin
 	MSG msg;
 	WNDCLASSEX WC;// 窗体类
 	HWND hwnd;// 主窗体
+	INT width = GetSystemMetrics(SM_CXSCREEN);
+	INT height = GetSystemMetrics(SM_CYSCREEN);
 
 	WC.cbSize = sizeof(WNDCLASSEX);
 	WC.style = CS_HREDRAW | CS_VREDRAW;
@@ -304,7 +367,7 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPTSTR lpCmdLin
 	WC.hIconSm = 0;
 
 	RegisterClassEx(&WC);
-	hwnd = CreateWindow(TEXT("WND"), TEXT("ClickRun鼠标连点器"), WS_OVERLAPPEDWINDOW ^ WS_THICKFRAME ^ WS_MAXIMIZEBOX, 0, 0, 356, 310, NULL, 0, 0, 0);
+	hwnd = CreateWindow(TEXT("WND"), TEXT("ClickRun鼠标连点器"), WS_OVERLAPPEDWINDOW ^ WS_THICKFRAME ^ WS_MAXIMIZEBOX, width / 2 - 178, height / 2 - 155, 356, 310, NULL, 0, 0, 0);
 	ShowWindow(hwnd, 1);
 	UpdateWindow(hwnd);
 
