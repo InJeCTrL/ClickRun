@@ -2,6 +2,12 @@
 
 > 简单的鼠标连点器
 
+## 下载
+
+[X86](https://github.com/InJeCTrL/ClickRun/releases/download/1.0/x86.zip)
+
+[X64](https://github.com/InJeCTrL/ClickRun/releases/download/1.0/x64.zip)
+
 ## 说明
 
 ![Preview](./View.png)
